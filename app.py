@@ -5,9 +5,20 @@ import datetime
 import websocket
 import threading
 import uuid
-DEBUG_MODE = True
+import sys
+import json
 
-avalible_url = "knifex.skin"  # Обновляй тут url
+
+DEBUG_MODE_KNIFE = False
+DEBUG_MODE_TWITCH = False
+
+if len(sys.argv)>1:
+    if sys.argv[1] == "-debugK":
+        DEBUG_MODE_KNIFE =  True
+    if sys.argv[1] == "-debugT":
+        DEBUG_MODE_TWITCH =  True
+
+avalible_url = "knifex.top"  # Обновляй тут url
 twich_names = ["", ""]  # Тут названия каналов твича
 accounts = ["526584f8-3aa6-4761-982e-c3d65891066a", ""]  # тут айди
 
@@ -35,9 +46,9 @@ def joinGiftex(link, message):
         else:
             print("[" + str(datetime.datetime.now().time()) + "](" + meta_data[:3] + "..." +
                   meta_data[len(meta_data)-3:len(meta_data)] + ") - \033[31mUUID аккаунта неверный\033[0m")
-            if DEBUG_MODE:
+            if DEBUG_MODE_KNIFE or DEBUG_MODE_TWITCH:
                 print(request.status_code)
-            if DEBUG_MODE:
+            if DEBUG_MODE_KNIFE or DEBUG_MODE_TWITCH:
                 print(request.headers)
 
     print(str(good_count)+"/"+str(len(accounts)))
@@ -55,22 +66,29 @@ def applyMessage(message):
             r'\"link\":\"\d{13}\"', message)]
         competitiveId = [s for s in re.findall(r'\d{13}', regexp[0])]
         joinGiftex(competitiveId[0], message)
+    if "pvp_fi" in message:
+        jsonMessage = json.JSONDecoder().decode(message[2:])
+        winners = ", ".join([str(winner) for winner in jsonMessage[1]["winners"]])
+        print(f'Competitive id: {str(jsonMessage[1]["gameId"])} winners: {winners}')
 
 
 def knifexSoket():
     print("Knifex start...")
     def on_message(ws, message):
-        if DEBUG_MODE:
-            print(message)
+        if DEBUG_MODE_KNIFE:
+            print(message[0:150])
         applyMessage(message)
 
     def onOpen(ws):
-        ws.send('422["join",{"ott":"' + str(uuid.uuid4()) + '"}]')
+        ws.send('422["join",{"ott":null}]')
+        ws.send('421["joy",{"rm":"pvpcomp"}]')
         def ping():
-             while True:
-                 time.sleep(25)
-                 ws.send("2")
-                 
+             while ws.keep_running:
+                time.sleep(25)
+                if ws.keep_running:
+                    ws.send("2")
+                else:
+                    ws.close()
         pingThread = threading.Thread(target=ping)
         pingThread.start()
 
@@ -82,23 +100,24 @@ def knifexSoket():
     def on_error(ws, error):
         print("////////////////////////// ERROR KNIFE ///////////////////////////")
         knifexInit()
+        print(error)
         print("### Auto open Knife ###")
 
-    ws = websocket.WebSocketApp("wss://" + avalible_url + ":2083/socket.io/?EIO=3&transport=websocket",
+    ws = websocket.WebSocketApp("wss://" + avalible_url + "/socket/sock2/?EIO=3&transport=websocket",
                                 on_message=on_message,
                                 on_close=on_close,
                                 on_error=on_error,
                                 on_open=onOpen)
 
     ws.run_forever()
-
+    
 
 def twtchSokets(channelName):
     print("Twitch " + channelName + " started...")
 
     def on_message(ws, message):
-        if DEBUG_MODE:
-            print(message)
+        if DEBUG_MODE_TWITCH:
+            print(message[0:150])
         applyMessage(message)
         if "PING" in message:
             ws.send("PONG")
@@ -112,8 +131,8 @@ def twtchSokets(channelName):
       
         def ping():
              while True:
-                 time.sleep(30)
-                 ws.send("PING")
+                ws.send("PING")
+                time.sleep(30)
 
         pingThread = threading.Thread(target=ping)
         pingThread.start()
@@ -137,7 +156,7 @@ def twtchSokets(channelName):
 
 for channel in twich_names:
     twichThread = threading.Thread(target=twtchSokets, args=[channel])
-    twichThread.start()
+    # twichThread.start()
 
 
 def knifexInit():
